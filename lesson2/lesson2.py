@@ -1,10 +1,7 @@
-from pymongo import MongoClient
 from bs4 import BeautifulSoup as bs
 import requests
 from pprint import pprint
-import time
 import re
-import random
 import pandas as pd
 
 
