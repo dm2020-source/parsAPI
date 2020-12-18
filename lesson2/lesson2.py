@@ -1,124 +1,52 @@
-from bs4 import BeautifulSoup as bs
+from bs4 import BeautifulSoup as Bs
 import requests
-from pprint import pprint
 import re
 import pandas as pd
+from pprint import pprint
 
+main_link = 'https://hh.ru' #/search/vacancy?L_save_area=true&clusters=true&enable_snippets=true&text=python&showClusters=true'
+params = {'L_save_area': 'true', 'clusters': 'true', 'enable_snippets': 'true', 'text': 'python', 'showClusters': 'true'}
+headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 6.1; Win64; rv:86.0) Gecko/20100101 Firefox/86.0'}
+link = f'{main_link}/search/vacancy/'
 
-def _parser_hh(vacancy):
-    vacancy_date = []
+response = requests.get(link, params=params, headers=headers)
 
-    params = {
-        'text': vacancy, \
-        'search_field': 'name', \
-        'items_on_page': '10', \
-        'page': ''
-    }
+#soup = Bs(response, 'lxml')
+soup = Bs(response.text, 'html.parser')
 
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 6.2; Win64; rv:86.0) Gecko/20100101 Firefox/86.0'
-    }
+if response.ok:
 
-    link = 'https://hh.ru/search/vacancy'
+    vacancy_list = soup.findAll('div',{'class': 'vacancy-serp-item HH-VacancySidebarTrigger-Vacancy'})
 
-    html = requests.get(link, params=params, headers=headers)
+    page_list = soup.findAll('div', {'data-qa': 'pager-block'})
 
-    if html.ok:
-        parsed_html = bs(html.text, 'html.parser')
+    vacansys = []
+    for vacancy in vacancy_list:
+        vacancy_data = {}
+        vacancy_name = vacancy.find('a').text
+        vacancy_link = vacancy.find('span', {'class': 'resume-search-item__name'}).find('a')['href']
 
-        page_block = parsed_html.find('div', {'data-qa': 'pager-block'})
-        if not page_block:
-            last_page = '1'
+        vacancy_salary = vacancy.find('span', {'data-qa': 'vacancy-serp__vacancy-compensation'})
+        if not vacancy_salary:
+            vacancy_salary_min = None
+            vacancy_salary_max = None
+            vacancy_salary_currency = None
         else:
-            last_page = int(page_block.find_all('a', {'class': 'HH-Pager-Control'})[-2].getText())
+            vacancy_salary = vacancy_salary.getText().replace(u'\xa0', u'')
+            salaries = vacancy_salary.split('-')
+            salaries[0] = re.sub(r'[^0-9]', '', salaries[0])
+            vacancy_salary_min = int(salaries[0])
+            if len(salaries) > 1:
+                salaries[1] = re.sub(r'[^0-9]', '', salaries[1])
+                vacancy_salary_max = int(salaries[1])
+            else:
+                vacancy_salary_max = None
 
-    for page in range(0, last_page):
-        params['page'] = page
-        html = requests.get(link, params=params, headers=headers)
+        vacancy_data['vacancy_name'] = vacancy_name
+        vacancy_data['vacancy_salary'] = vacancy_salary
+        vacancy_data['vacancy_salary_min'] = vacancy_salary_min
+        vacancy_data['vacancy_salary_max'] = vacancy_salary_max
+        vacancy_data['vacancy_link'] = vacancy_link
 
-        if html.ok:
-            parsed_html = bs(html.text, 'html.parser')
-
-            vacancy_items = parsed_html.find('div', {'data-qa': 'vacancy-serp__results'}) \
-                .find_all('div', {'class': 'vacancy-serp-item'})
-
-            for item in vacancy_items:
-                vacancy_date.append(_parser_item_hh(item))
-
-
-    return vacancy_date
-
-
-def _parser_item_hh(item):
-    vacancy_date = {}
-
-    # vacancy_name
-    vacancy_name = item.find('div', {'class': 'resume-search-item__name'}) \
-        .getText() \
-        .replace(u'\xa0', u' ')
-
-    vacancy_date['vacancy_name'] = vacancy_name
-
-    # company_name
-    company_name = item.find('div', {'class': 'vacancy-serp-item__meta-info'}) \
-        .find('a') \
-        .getText()
-
-    vacancy_date['company_name'] = company_name
-
-    # salary
-    salary = item.find('div', {'class': 'vacancy-serp-item__compensation'})
-    if not salary:
-        salary_min = None
-        salary_max = None
-        salary_currency = None
-    else:
-        salary = salary.getText() \
-            .replace(u'\xa0', u'')
-
-        salary = re.split(r'\s|-', salary)
-
-        if salary[0] == 'до':
-            salary_min = None
-            salary_max = int(salary[1])
-        elif salary[0] == 'от':
-            salary_min = int(salary[1])
-            salary_max = None
-        else:
-            salary_min = int(salary[0])
-            salary_max = int(salary[1])
-
-        salary_currency = salary[2]
-
-    vacancy_date['salary_min'] = salary_min
-    vacancy_date['salary_max'] = salary_max
-    vacancy_date['salary_currency'] = salary_currency
-
-    # link
-    is_ad = item.find('span', {'class': 'vacancy-serp-item__controls-item vacancy-serp-item__controls-item_last'}) \
-        .getText()
-
-    vacancy_link = item.find('div', {'class': 'resume-search-item__name'}) \
-        .find('a')['href']
-
-    if is_ad != 'Реклама':
-        vacancy_link = vacancy_link.split('?')[0]
-
-    vacancy_date['vacancy_link'] = vacancy_link
-
-    # site
-    vacancy_date['site'] = 'hh.ru'
-
-    return vacancy_date
-
-
-def parser_vacancy(vacancy):
-    vacancy_date = []
-    vacancy_date.extend(_parser_hh(vacancy))
-
-    df = pd.DataFrame(vacancy_date)
-
-    return df
-
-#vacancy = 'python'
-#df = parser_vacancy(vacancy)
+        vacansys.append(vacancy_data)
+        pprint(vacansys)
